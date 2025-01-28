@@ -26,68 +26,12 @@
           v-model="checkAll"
           @change="handleCheckAllChange"
           @click="onAllCheckboxNativeChange"
-          >Display all</el-checkbox
         >
+          Display all
+        </el-checkbox>
       </el-col>
     </el-row>
     <div class="checkbox-group">
-      <el-checkbox-group
-        v-model="checkedItems"
-        size="small"
-        @change="handleCheckedItemsChange"
-      >
-        <div class="checkbox-group-inner">
-          <div class="checkbox-tooltip" :style="{'top': tooltipPosition + 'px'}">
-            <el-popover
-              ref="tooltip"
-              :visible="tooltipVisible"
-              placement="top"
-              :show-arrow="false"
-              :teleported="false"
-              trigger="manual"
-              popper-class="checkbox-tooltip-popper"
-              virtual-triggering
-              :width="260"
-            >
-              <template #default>
-                <div class="checkbox-text">{{ tooltipLabel }}</div>
-              </template>
-            </el-popover>
-          </div>
-          <el-row
-            v-for="item in selections"
-            :key="item[identifierKey]"
-            :label="item[identifierKey]"
-          >
-            <div class="checkbox-container" 
-              @mouseenter="checkboxMouseEnterEmit(item[identifierKey], true)"
-              @mouseleave="checkboxMouseEnterEmit(item[identifierKey], false)"
-              ref="checkboxContainer"
-              >
-              <el-checkbox
-                class="my-checkbox"
-                :label="item[identifierKey]"
-                @change="visibilityToggle(item[identifierKey], $event)"
-                @click="onCheckboxNativeChange"
-                @mouseenter="displayTooltip(item[labelKey], true, $event)"
-                @mouseleave="displayTooltip('', false, $event)"
-                :checked="!('enabled' in item) || item.enabled === true"
-              >
-                <el-row class="checkbox-row">
-                  <el-col :span="4" v-if="hasLineStyles(item)">
-                    <div class="path-visual" :style="getLineStyles(item)"></div>
-                  </el-col>
-                  <el-col :span="20">
-                    <div class="selection-checkbox-label" :style="getBackgroundStyles(item)">
-                      {{ item[labelKey] }}
-                    </div>
-                  </el-col>
-                </el-row>
-              </el-checkbox>
-            </div>
-          </el-row>
-        </div>
-      </el-checkbox-group>
       <el-cascader
         v-if="options.length"
         v-model="cascaderItems"
@@ -132,6 +76,77 @@
           </el-popover>
         </template>
       </el-cascader>
+      <el-checkbox-group
+        v-else
+        v-model="checkedItems"
+        size="small"
+        class="checkbox-group"
+        @change="handleCheckedItemsChange"
+      >
+        <div class="checkbox-group-inner">
+          <el-row
+            v-for="item in selections"
+            :key="item[identifierKey]"
+            :label="item[identifierKey]"
+          >
+            <div class="checkbox-container"
+              @mouseenter="checkboxMouseEnterEmit(item[identifierKey], true)"
+              @mouseleave="checkboxMouseEnterEmit(item[identifierKey], false)"
+              >
+              <el-checkbox
+                class="my-checkbox"
+                :value="item[identifierKey]"
+                @change="visibilityToggle(item[identifierKey], $event)"
+                @click="onCheckboxNativeChange"
+                :checked="!('enabled' in item) || item.enabled === true"
+              >
+                <el-row class="checkbox-row">
+                  <el-col :span="4" v-if="hasLineStyles(item)">
+                    <div class="path-visual" :style="getLineStyles(item)"></div>
+                  </el-col>
+                  <el-col :span="20">
+                    <div :style="getBackgroundStyles(item)">
+                      {{ item[labelKey] }}
+                    </div>
+                  </el-col>
+                </el-row>
+              </el-checkbox>
+            </div>
+          </el-row>
+          <el-row
+            v-for="item in selections"
+            :key="item[identifierKey]"
+            :label="item[identifierKey]"
+          >
+            <div class="checkbox-container" 
+              @mouseenter="checkboxMouseEnterEmit(item[identifierKey], true)"
+              @mouseleave="checkboxMouseEnterEmit(item[identifierKey], false)"
+              ref="checkboxContainer"
+              >
+              <el-checkbox
+                class="my-checkbox"
+                :value="item[identifierKey]"
+                @change="visibilityToggle(item[identifierKey], $event)"
+                @click="onCheckboxNativeChange"
+                @mouseenter="displayTooltip(item[labelKey], true, $event)"
+                @mouseleave="displayTooltip('', false, $event)"
+                :checked="!('enabled' in item) || item.enabled === true"
+              >
+                <el-row class="checkbox-row">
+                  <el-col :span="4" v-if="hasLineStyles(item)">
+                    <div class="path-visual" :style="getLineStyles(item)"></div>
+                  </el-col>
+                  <el-col :span="20">
+                    <div class="selection-checkbox-label" :style="getBackgroundStyles(item)">
+                      {{ item[labelKey] }}
+                    </div>
+                  </el-col>
+                </el-row>
+              </el-checkbox>
+            </div>
+          </el-row>
+        </div>
+      </el-checkbox-group>
     </div>
   </div>
 </template>
@@ -268,7 +283,7 @@ export default {
       this.checkedItems = val
         ? this.selections.map((a) => a[this.identifierKey])
         : []
-      
+
       this.$emit('checkAll', {
         keys: this.selections.map((a) => a[this.identifierKey]),
         value: val,
@@ -284,6 +299,33 @@ export default {
         return { background: item.colour }
       }
       return {}
+    },
+    getState: function() {
+      let checkedCount = this.checkedItems.length
+      const checkAll = checkedCount === this.selections.length
+      return {
+        checkAll,
+        checked: !checkAll ? this.checkedItems : []
+      }
+    },
+    setState: function(state) {
+      this.checkAll = state.checkAll
+      this.checkedItems.length = 0
+      if (state.checked?.length) {
+        this.checkedItems.push(...state.checked)
+        this.selections.forEach((item) => {
+          const key = item[this.identifierKey]
+          this.$emit('changed', {key, value: this.checkedItems.includes(key)})
+        })
+      } else {
+        const keys = this.selections.map((a) => a[this.identifierKey])
+        let value = false
+        if (this.checkAll) {
+          value = true
+          this.checkedItems.push(...keys)
+        }
+        this.$emit('checkAll', { keys, value })
+      }
     },
     hasLineStyles: function(item) {
       return 'colour' in item && this.colourStyle === 'line'
@@ -446,7 +488,7 @@ export default {
 
 :deep(.el-checkbox__label) {
   padding-left: 5px;
-  color: $app-primary-color;
+  color: inherit !important;
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0px;
@@ -467,10 +509,6 @@ export default {
 :deep(.el-row) {
   height:20px;
   margin-bottom: 0;
-}
-
-:deep(.el-checkbox__label) {
-  color: $app-primary-color !important;
 }
 
 .checkbox-row {
@@ -519,7 +557,7 @@ export default {
 <style lang="scss">
 .el-cascader,
 .el-cascader__tags {
-  padding: 0 0 18px 18px;
+  padding: 10px;
 }
 
 .el-cascader__collapse-tag {

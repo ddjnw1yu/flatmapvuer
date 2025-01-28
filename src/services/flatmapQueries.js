@@ -8,6 +8,7 @@ const removeDuplicates = function (arrayOfAnything) {
 }
 
 const cachedLabels = {}
+const cachedTaxonLabels = [];
 
 const findTaxonomyLabel = async function (flatmapAPI, taxonomy) {
   if (cachedLabels && cachedLabels.hasOwnProperty(taxonomy)) {
@@ -35,6 +36,38 @@ const findTaxonomyLabel = async function (flatmapAPI, taxonomy) {
   })
 }
 
+const findTaxonomyLabels = async function (mapImp, taxonomies) {
+  const intersectionTaxonomies = taxonomies.filter((taxonomy) =>
+    cachedTaxonLabels.some((obj) => obj.taxon === taxonomy)
+  );
+
+  const foundCachedTaxonLabels = cachedTaxonLabels.filter((obj) =>
+    intersectionTaxonomies.includes(obj.taxon)
+  );
+
+  const leftoverTaxonomies = taxonomies.filter((taxonomy) =>
+    !intersectionTaxonomies.includes(taxonomy)
+  );
+
+  if (!leftoverTaxonomies.length) {
+    return foundCachedTaxonLabels;
+  } else {
+    const entityLabels = await mapImp.queryLabels(leftoverTaxonomies);
+    if (entityLabels.length) {
+      entityLabels.forEach((entityLabel) => {
+        let { entity: taxon, label } = entityLabel;
+        if (label === 'Mammalia') {
+          label = 'Mammalia not otherwise specified'
+        }
+        const item = { taxon, label };
+        foundCachedTaxonLabels.push(item);
+        cachedTaxonLabels.push(item);
+      });
+      return foundCachedTaxonLabels;
+    }
+  }
+}
+
 const inArray = function (ar1, ar2) {
   if (!ar1 || !ar2) return false
   let as1 = JSON.stringify(ar1)
@@ -48,13 +81,13 @@ let FlatmapQueries = function () {
     this.destinations = []
     this.origins = []
     this.components = []
-    this.urls = []
+    this.rawURLs = []
     this.controller = undefined
     this.uberons = []
     this.lookUp = []
   }
 
-  this.createTooltipData = async function (eventData) {
+  this.createTooltipData = async function (mapImp, eventData) {
     let hyperlinks = []
     if (
       eventData.feature.hyperlinks &&
@@ -62,18 +95,17 @@ let FlatmapQueries = function () {
     ) {
       hyperlinks = eventData.feature.hyperlinks
     } else {
-      hyperlinks = this.urls.map((url) => ({ url: url, id: 'pubmed' }))
+      hyperlinks = this.rawURLs;
     }
     let taxonomyLabel = undefined
     if (eventData.provenanceTaxonomy) {
       taxonomyLabel = []
-      for (let i = 0; eventData.provenanceTaxonomy.length > i; i++) {
-        taxonomyLabel.push(
-          await findTaxonomyLabel(
-            this.flatmapAPI,
-            eventData.provenanceTaxonomy[i]
-          )
-        )
+      const entityLabels = await findTaxonomyLabels(mapImp, eventData.provenanceTaxonomy);
+      if (entityLabels.length) {
+        entityLabels.forEach((entityLabel) => {
+          const { label } = entityLabel;
+          taxonomyLabel.push(label);
+        });
       }
     }
 
@@ -104,33 +136,22 @@ let FlatmapQueries = function () {
     return labelList
   }
 
-  this.createLabelLookup = function (uberons) {
-    return new Promise((resolve) => {
+  this.createLabelLookup = function (mapImp, uberons) {
+    return new Promise(async (resolve) => {
       let uberonMap = {}
       this.uberons = []
-      const data = { sql: this.buildLabelSqlStatement(uberons) }
-      fetch(`${this.flatmapApi}knowledge/query/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      })
-        .then((response) => response.json())
-        .then((payload) => {
-          const entity = payload.keys.indexOf('entity')
-          const label = payload.keys.indexOf('label')
-          if (entity > -1 && label > -1) {
-            payload.values.forEach((pair) => {
-              uberonMap[pair[entity]] = pair[label]
-              this.uberons.push({
-                id: pair[entity],
-                name: pair[label],
-              })
-            })
-          }
-          resolve(uberonMap)
-        })
+      const entityLabels = await findTaxonomyLabels(mapImp, uberons);
+      if (entityLabels.length) {
+        entityLabels.forEach((entityLabel) => {
+          const { taxon: entity, label } = entityLabel;
+          uberonMap[entity] = label;
+          this.uberons.push({
+            id: entity,
+            name: label,
+          })
+        });
+        resolve(uberonMap)
+      }
     })
   }
 
@@ -198,6 +219,9 @@ let FlatmapQueries = function () {
       if (inArray(connectivity.axons, node)) {
         terminal = true
       }
+      if (connectivity.somas && inArray(connectivity.somas, node)) {
+        terminal = true
+      }
       if (inArray(connectivity.dendrites, node)) {
         terminal = true
       }
@@ -209,7 +233,7 @@ let FlatmapQueries = function () {
     return found
   }
 
-  this.retrieveFlatmapKnowledgeForEvent = async function (eventData) {
+  this.retrieveFlatmapKnowledgeForEvent = async function (mapImp, eventData) {
     // check if there is an existing query
     if (this.controller) this.controller.abort()
 
@@ -221,15 +245,52 @@ let FlatmapQueries = function () {
     this.destinations = []
     this.origins = []
     this.components = []
-    if (!keastIds || keastIds.length == 0) return
+    this.rawURLs = []
+    if (!keastIds || keastIds.length == 0 || !keastIds[0]) return
 
-    let prom1 = this.queryForConnectivity(keastIds, signal) // This on returns a promise so dont need 'await'
-    let prom2 = await this.pubmedQueryOnIds(eventData)
-    let results = await Promise.all([prom1, prom2])
+    let prom1 = this.queryForConnectivityNew(mapImp, keastIds, signal) // This on returns a promise so dont need 'await'
+    let results = await Promise.all([prom1])
     return results
   }
 
-  this.queryForConnectivity = function (keastIds, signal, processConnectivity=true) {
+  this.queryForConnectivityNew = function (mapImp, keastIds, signal, processConnectivity=true) {
+    return new Promise((resolve) => {
+      mapImp.queryKnowledge(keastIds[0])
+        .then((response) => {
+          if (this.checkConnectivityExists(response)) {
+            let connectivity = response;
+            if (processConnectivity) {
+              this.processConnectivity(mapImp, connectivity).then((processedConnectivity) => {
+                // response.references is publication urls
+                if (response.references) {
+                  // with publications from both PubMed and Others
+                  this.rawURLs = [...response.references];
+                  resolve(processedConnectivity)
+                } else {
+                  // without publications
+                  resolve(processedConnectivity)
+                }
+              })
+            }
+            else resolve(connectivity)
+          } else {
+            resolve(false)
+          }
+        })
+        .catch((error) => {
+          if (error.name === 'AbortError') {
+            // This error is from AbortController's abort method.
+          } else {
+            // console.error('Error:', error)
+            // TODO: to update after queryKnowledge method update
+            console.warn(`Unable to get the knowledge for the entity ${keastIds[0]}.`)
+          }
+          resolve(false)
+        })
+    })
+  }
+
+  this.queryForConnectivity = function (mapImp, keastIds, signal, processConnectivity=true) {
     const data = { sql: this.buildConnectivitySqlStatement(keastIds) }
     const headers = {
       method: 'POST',
@@ -246,7 +307,7 @@ let FlatmapQueries = function () {
           if (this.connectivityExists(data)) {
             let connectivity = JSON.parse(data.values[0][0])
             if (processConnectivity) {
-              this.processConnectivity(connectivity).then((processedConnectivity) => {
+              this.processConnectivity(mapImp, connectivity).then((processedConnectivity) => {
                 resolve(processedConnectivity)
               })
             }
@@ -265,6 +326,10 @@ let FlatmapQueries = function () {
         })
     })
   }
+
+  this.checkConnectivityExists = function (data) {
+    return data && data.connectivity?.length;
+  };
 
   this.connectivityExists = function (data) {
     if (
@@ -336,20 +401,28 @@ let FlatmapQueries = function () {
     )
   }
 
-  this.processConnectivity = function (connectivity) {
+  this.processConnectivity = function (mapImp, connectivity) {
     return new Promise((resolve) => {
       // Filter the origin and destinations from components
       let components = this.findComponents(connectivity)
 
       // Remove duplicates
       let axons = removeDuplicates(connectivity.axons)
-      let dendrites = removeDuplicates(connectivity.dendrites)
+      //Somas will become part of origins, support this for future proof
+      let dendrites = []
+      if (connectivity.somas && connectivity.somas.length > 0) {
+        dendrites.push(...connectivity.somas)
+      }
+      if (connectivity.dendrites && connectivity.dendrites.length > 0) {
+        dendrites.push(...connectivity.dendrites)
+      }
+      dendrites = removeDuplicates(dendrites)
 
       // Create list of ids to get labels for
       let conIds = this.findAllIdsFromConnectivity(connectivity)
 
       // Create readable labels from the nodes. Setting this to 'this.origins' updates the display
-      this.createLabelLookup(conIds).then((lookUp) => {
+      this.createLabelLookup(mapImp, conIds).then((lookUp) => {
         this.destinations = axons.map((a) =>
           this.createLabelFromNeuralNode(a, lookUp)
         )
@@ -390,10 +463,6 @@ let FlatmapQueries = function () {
     return found.flat()
   }
 
-  this.stripPMIDPrefix = function (pubmedId) {
-    return pubmedId.split(':')[1]
-  }
-
   this.buildPubmedSqlStatement = function (keastIds) {
     let sql = 'select distinct publication from publications where entity in ('
     if (keastIds.length === 1) {
@@ -424,57 +493,6 @@ let FlatmapQueries = function () {
         console.error('Error:', error)
       })
   }
-  // Note that this functin WILL run to the end, as it doesn not catch the second level of promises
-  this.pubmedQueryOnIds = function (eventData) {
-    return new Promise((resolve) => {
-      const keastIds = eventData.resource
-      const source = eventData.feature.source
-      if (!keastIds || keastIds.length === 0) return
-      const sql = this.buildPubmedSqlStatement(keastIds)
-      this.flatmapQuery(sql).then((data) => {
-        // Create pubmed url on paths if we have them
-        if (data.values.length > 0) {
-          this.urls = [
-            this.pubmedSearchUrl(
-              data.values.map((id) => this.stripPMIDPrefix(id[0]))
-            ),
-          ]
-          resolve(true)
-        } else {
-          // Create pubmed url on models
-          this.pubmedQueryOnModels(source).then((result) => {
-            resolve(result)
-          })
-        }
-      })
-    })
-  }
-
-  this.pubmedQueryOnModels = function (source) {
-    return this.flatmapQuery(
-      this.buildPubmedSqlStatementForModels(source)
-    ).then((data) => {
-      if (Array.isArray(data.values) && data.values.length > 0) {
-        this.urls = [
-          this.pubmedSearchUrl(
-            data.values.map((id) => this.stripPMIDPrefix(id[0]))
-          ),
-        ]
-        return true
-      } else {
-        this.urls = [] // Clears the pubmed search button
-      }
-      return false
-    })
-  }
-
-  this.pubmedSearchUrl = function (ids) {
-    let url = 'https://pubmed.ncbi.nlm.nih.gov/?'
-    let params = new URLSearchParams()
-    const decodedIDs = ids.map((id) => decodeURIComponent(id));
-    params.append('term', decodedIDs);
-    return url + params.toString()
-  }
 }
 
-export { FlatmapQueries, findTaxonomyLabel }
+export { FlatmapQueries, findTaxonomyLabel, findTaxonomyLabels }

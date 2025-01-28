@@ -96,7 +96,8 @@
 
 <script>
 /* eslint-disable no-alert, no-console */
-import { shallowRef } from 'vue';
+import { AnnotationService } from '@abi-software/sparc-annotation'
+import { markRaw, shallowRef } from 'vue';
 import { Setting as ElIconSetting } from '@element-plus/icons-vue'
 import {
   ElAutocomplete as Autocomplete,
@@ -133,6 +134,15 @@ export default {
     FlatmapSelected: function (resource) {
       if (resource.eventType === 'click') {
         if (this.consoleOn) console.log('resource', resource)
+
+        // Show marker on centreline of right vagus X nerve trunk
+        const { kind, models, location } = resource.feature;
+        if (window.flatmapImp && models && location && kind === 'centreline') {
+          window.flatmapImp.clearMarkers();
+          window.flatmapImp.addMarker(models, {
+            location: location
+          });
+        }
       }
     },
     onOpenPubmedUrl: function (url) {
@@ -166,7 +176,8 @@ export default {
         const results = this.$refs.multi
           .getCurrentFlatmap()
           .searchSuggestions(term)
-        results.__featureIds.forEach((id) => {
+        const featureIds = results.__featureIds || results.featureIds;
+        featureIds.forEach((id) => {
           const annotation = this.$refs.multi
             .getCurrentFlatmap()
             .mapImp.annotation(id)
@@ -186,8 +197,12 @@ export default {
         .getCurrentFlatmap()
         .searchAndShowResult(this.searchText, true)
     },
-    onFlatmapChanged: function () {
+    onFlatmapChanged: function (activeSpecies) {
       this.helpMode = false;
+      // Update current flatmapImp after changing species
+      if (this.$refs.multi.$refs[activeSpecies][0].mapImp) {
+        window.flatmapImp = this.$refs.multi.$refs[activeSpecies][0].mapImp;
+      }
     },
     onHelpModeShowNext: function () {
       this.helpModeActiveItem += 1;
@@ -214,56 +229,54 @@ export default {
       }
     },
   },
+  provide() {
+    return {
+      $annotator: this.annotator,
+    }
+  },
   data: function () {
     return {
       consoleOn: true,
       searchText: '',
       disableUI: false,
-      minZoom: 4,
+      minZoom: 1,
       availableSpecies: {
         'Human Female': {
           taxo: 'NCBITaxon:9606',
           biologicalSex: 'PATO:0000383',
           iconClass: 'mapicon-icon_human',
-          displayWarning: true,
         },
         'Human Male': {
           taxo: 'NCBITaxon:9606',
           biologicalSex: 'PATO:0000384',
           iconClass: 'mapicon-icon_human',
-          displayWarning: true,
+          displayLatestChanges: true,
         },
         Rat: {
           taxo: 'NCBITaxon:10114',
           iconClass: 'mapicon-icon_rat',
-          displayWarning: true,
           displayLatestChanges: true,
         },
         'Rat (NPO)': {
           taxo: 'NCBITaxon:10116',
           iconClass: 'mapicon-icon_rat',
-          displayWarning: true,
           displayLatestChanges: true,
         },
         Mouse: {
           taxo: 'NCBITaxon:10090',
           iconClass: 'mapicon-icon_mouse',
-          displayWarning: true,
         },
         Kember: { taxo: 'ABI:1000001', displayWarning: true },
         Pig: {
           taxo: 'NCBITaxon:9823',
           iconClass: 'mapicon-icon_pig',
-          displayWarning: true,
         },
         Cat: {
           taxo: 'NCBITaxon:9685',
           iconClass: 'mapicon-icon_cat',
-          displayWarning: true,
         },
         Vagus: {
-          taxo: 'UBERON:1759',
-          displayWarning: true,
+          taxo: 'UBERON:0001759',
         },
         Sample: { taxo: 'NCBITaxon:1', displayWarning: true },
         'Functional Connectivity': {
@@ -287,13 +300,14 @@ export default {
       mapSettings: [],
       //flatmapAPI: "https://mapcore-demo.org/current/flatmap/v2/"
       //flatmapAPI: "https://mapcore-demo.org/devel/flatmap/v3/"
-      flatmapAPI: "https://mapcore-demo.org/current/flatmap/v3/",
-      //flatmapAPI: 'https://mapcore-demo.org/devel/flatmap/v4/',
+      //flatmapAPI: "https://mapcore-demo.org/current/flatmap/v3/",
+      flatmapAPI: 'https://mapcore-demo.org/devel/flatmap/v4/',
       //flatmapAPI: 'https://mapcore-demo.org/curation/flatmap/',
       //flatmapAPI: "https://mapcore-demo.org/fccb/flatmap/"
       //flatmapAPI: "https://mapcore-demo.org/staging/flatmap/v1/"
       // flatmapAPI: "https://mapcore-demo.org/devel/flatmap/v1/",
-      ElIconSetting: shallowRef(ElIconSetting)
+      ElIconSetting: shallowRef(ElIconSetting),
+      annotator: markRaw(new AnnotationService(`https://mapcore-demo.org/devel/flatmap/v4/annotator`)),
     }
   },
   mounted: function () {

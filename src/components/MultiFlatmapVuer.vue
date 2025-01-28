@@ -1,6 +1,6 @@
 <template>
   <div class="multi-container" ref="multiContainer">
-    <div style="position: absolute; z-index: 10" v-if="!disableUI">
+    <div style="position: absolute; z-index: 100" v-if="!disableUI">
       <div class="species-display-text">Species</div>
       <el-popover
         content="Select a species"
@@ -38,6 +38,12 @@
 
       </el-popover>
     </div>
+    <!--
+      This event is emitted when the user chooses a different map option
+      from ``openMapOptions`` props.
+      @event open-map
+      @arg {Object} `$event`
+    -->
     <FlatmapVuer
       v-for="(item, key) in speciesList"
       :key="key"
@@ -56,16 +62,14 @@
       @resource-selected="resourceSelected"
       @ready="FlatmapReady"
       @pan-zoom-callback="panZoomCallback"
+      :annotationSidebar="annotationSidebar"
+      @annotation-open="onAnnotationOpen"
+      @annotation-close="onAnnotationClose"
       :connectivityInfoSidebar="connectivityInfoSidebar"
       @connectivity-info-open="onConnectivityInfoOpen"
       @connectivity-info-close="onConnectivityInfoClose"
-      @open-map="
-        /**
-         * This event is emitted when the user chooses a different map option
-         * from ``openMapOptions`` props.
-         * @arg $event
-         */
-        $emit('open-map', $event)"
+      @connectivity-graph-error="onConnectivityGraphError"
+      @open-map="$emit('open-map', $event)"
       @pathway-selection-changed="onSelectionsDataChanged"
       :minZoom="minZoom"
       :helpMode="activeSpecies == key && helpMode"
@@ -79,6 +83,7 @@
       :displayMinimap="displayMinimap"
       :showStarInLegend="showStarInLegend"
       style="height: 100%"
+      :mapManager="mapManagerRef"
       :flatmapAPI="flatmapAPI"
       :sparcAPI="sparcAPI"
     />
@@ -120,6 +125,9 @@ export default {
     Popover,
     FlatmapVuer,
   },
+  created: function () {
+    this.loadMapManager();
+  },
   mounted: function () {
     this.initialise()
     EventBus.on('onActionClick', (action) => {
@@ -137,7 +145,7 @@ export default {
   },
   methods: {
     /**
-     * @vuese
+     * @public
      * Function to initialise the component when mounted.
      * It returns a promise.
      */
@@ -216,9 +224,26 @@ export default {
       })
     },
     /**
-     * @vuese
+     * Function to load `mapManager` to create flatmap.
+     */
+    loadMapManager: function () {
+      if (!this.mapManagerRef) {
+        if (this.mapManager) {
+          this.mapManagerRef = this.mapManager;
+        } else {
+          this.mapManagerRef = markRaw(new flatmap.MapManager(this.flatmapAPI));
+          /**
+           * The event emitted after a new mapManager is loaded.
+           * This mapManager can be used to create new flatmaps.
+           */
+          this.$emit('mapmanager-loaded', this.mapManagerRef);
+        }
+      }
+    },
+    /**
+     * @public
      * Function to emit ``resource-selected`` event with provided ``resource``.
-     * @arg action
+     * @arg {Object} `action`
      */
      resourceSelected: function (action) {
       /**
@@ -227,9 +252,9 @@ export default {
       this.$emit('resource-selected', action)
     },
     /**
-     * @vuese
+     * @public
      * Function to emit ``ready`` event after the flatmap is loaded.
-     * @arg component
+     * @arg {Object} `component`
      */
     FlatmapReady: function (component) {
       /**
@@ -239,17 +264,17 @@ export default {
       this.$emit('ready', component)
     },
     /**
-     * @vuese
+     * @public
      * Function to get the current active map.
      */
     getCurrentFlatmap: function () {
       return this.$refs[this.activeSpecies][0]
     },
     /**
-     * @vuese
+     * @public
      * Function to emit ``pan-zoom-callback`` event
      * from the event emitted in ``callback`` function from ``MapManager.loadMap()``.
-     * @arg payload
+     * @arg {Object} `payload`
      */
     panZoomCallback: function (payload) {
       /**
@@ -258,45 +283,54 @@ export default {
        */
       this.$emit('pan-zoom-callback', payload)
     },
+    onAnnotationClose: function () {
+      this.$emit('annotation-close');
+    },
+    onAnnotationOpen: function (payload) {
+      this.$emit('annotation-open', payload);
+    },
     onConnectivityInfoClose: function () {
       this.$emit('connectivity-info-close');
     },
     onConnectivityInfoOpen: function (entryData) {
       this.$emit('connectivity-info-open', entryData);
     },
+    onConnectivityGraphError: function (errorInfo) {
+      this.$emit('connectivity-graph-error', errorInfo);
+    },
     onSelectionsDataChanged: function (data) {
       this.$emit('pathway-selection-changed', data);
     },
     /**
-     * @vuese
+     * @public
      * Function to show popup on map.
-     * @arg featureId,
-     * @arg node,
-     * @arg options
+     * @arg {String} `featureId`,
+     * @arg {Object} `node`,
+     * @arg {Object} `options`
      */
     showPopup: function (featureId, node, options) {
       let map = this.getCurrentFlatmap()
       map.showPopup(featureId, node, options)
     },
     /**
-     * @vuese
+     * @public
      * Function to show marker popup.
-     * @arg featureId,
-     * @arg node,
-     * @arg options
+     * @arg {String} `featureId`,
+     * @arg {Object} `node`,
+     * @arg {Object} `options`
      */
     showMarkerPopup: function (featureId, node, options) {
       let map = this.getCurrentFlatmap()
       map.showMarkerPopup(featureId, node, options)
     },
     /**
-     * @vuese
+     * @public
      * Function to set species.
      * This function is called on the first load and
      * when user changes the species.
-     * @arg species,
-     * @arg state,
-     * @arg numberOfRetry
+     * @arg {Array} `species`,
+     * @arg {Object} `state`,
+     * @arg {Number} `numberOfRetry`
      */
     setSpecies: function (species, state, numberOfRetry) {
       if (this.$refs && species in this.$refs) {
@@ -318,7 +352,6 @@ export default {
       }
     },
     /**
-     * @vuese
      * Function to switch to the latest existing map from
      * a legacy map of the same species.
      * @arg state
@@ -340,11 +373,9 @@ export default {
       }
     },
     /**
-     * @vuese
      * Create a legacy entry with the provided information
      * @arg state,
      * @arg taxo,
-     * @arg uuid
      *
      * @private
      */
@@ -372,7 +403,6 @@ export default {
       }
     },
     /**
-     * @vuese
      * Function used to translate the legacy map state to one that can be used in current
      * flatmap if required. If it is a legacy, an Select entry will be added
      * @arg state
@@ -401,12 +431,11 @@ export default {
             //uuid is in the state but should be checked if it is the latest map
             //for that taxon
             return new Promise(() => {
-              const mapManager = new flatmap.MapManager(this.flatmapAPI)
               //mapManager.findMap_ is an async function so we need to wrap this with a promise
               const identifier = { taxon: mapState.entry }
               if (mapState.biologicalSex)
                 identifier['biologicalSex'] = mapState.biologicalSex
-              mapManager
+              this.mapManagerRef
                 .findMap_(identifier)
                 .then((map) => {
                   if (map.uuid !== mapState.uuid) {
@@ -431,11 +460,9 @@ export default {
       })
     },
     /**
-     * @vuese
+     * @public
      * Function used for getting the current states of the scene. This exported states
      * can be imported using the importStates method.
-     *
-     * @public
      */
     getState: function () {
       let state = {
@@ -447,15 +474,16 @@ export default {
       return state
     },
     /**
-     * @vuese
+     * @public
      * Function used for importing the states of the scene. This exported states
      * can be imported using the read states method.
-     * @arg state
-     *
-     * @public
+     * @arg {Object} state
      */
     setState: function (state) {
       if (state) {
+        // Update undefined mapManagerRef for setState happens before created event
+        this.loadMapManager();
+
         //Update state if required
         this.updateState(state).then((currentState) => {
           this.initialise().then(() => {
@@ -473,8 +501,9 @@ export default {
       }
     },
     /**
-     * @vuese
+     * @public
      * Function to activate help mode tooltip by item index number
+     * @arg {Number} `index`
      */
     activateTooltipByIndex: function (index) {
       return (
@@ -483,8 +512,9 @@ export default {
       );
     },
     /**
-     * @vuese
+     * @public
      * Function to check the last item of help mode
+     * @arg {Boolean} `isLastItem`
      */
     onHelpModeLastItem: function (isLastItem) {
       if (isLastItem) {
@@ -492,7 +522,7 @@ export default {
       }
     },
     /**
-     * @vuese
+     * @public
      * Function to emit event after a tooltip is shown.
      */
     onTooltipShown: function () {
@@ -502,7 +532,7 @@ export default {
       this.$emit('shown-tooltip');
     },
     /**
-     * @vuese
+     * @public
      * Function to emit event after a tooltip on the map is shown.
      */
     onMapTooltipShown: function () {
@@ -512,8 +542,9 @@ export default {
       this.$emit('shown-map-tooltip');
     },
     /**
-     * @vuese
+     * @public
      * Function to change the view mode of the map.
+     * @arg {String} `modeName`
      */
     changeViewingMode: function (modeName) {
       let map = this.getCurrentFlatmap()
@@ -534,7 +565,7 @@ export default {
      */
     minZoom: {
       type: Number,
-      default: 4,
+      default: 1,
     },
     /**
      * The option to create map on component mounted.
@@ -689,6 +720,14 @@ export default {
       default: undefined,
     },
     /**
+     * Flatmap's Map Manager to use as single Map Manager
+     * when the value is provided.
+     */
+    mapManager: {
+      type: Object,
+      default: undefined,
+    },
+    /**
      * Specify the endpoint of the flatmap server.
      */
     flatmapAPI: {
@@ -716,6 +755,13 @@ export default {
       type: Boolean,
       default: false,
     },
+    /**
+     * The option to show connectivity information in sidebar
+     */
+     annotationSidebar: {
+      type: Boolean,
+      default: false,
+    },
   },
   data: function () {
     return {
@@ -724,6 +770,7 @@ export default {
       requireInitialisation: true,
       resolveList: markRaw([]),
       initialised: false,
+      mapManagerRef: undefined,
     }
   },
   watch: {
@@ -757,9 +804,6 @@ export default {
 }
 
 .select-box {
-  width: 120px;
-  border-radius: 4px;
-  border: 1px solid rgb(144, 147, 153);
   background-color: var(--white);
   font-weight: 500;
   color: rgb(48, 49, 51);
@@ -771,6 +815,27 @@ export default {
     padding-top: 0.25em;
   }
   :deep() {
+    .el-select__wrapper {
+      position: relative;
+      width: fit-content;
+      box-shadow: none;
+      border-radius: 4px;
+      border: 1px solid var(--el-border-color);
+      &.is-focused {
+        border-color: $app-primary-color;
+      }
+    }
+    .el-select__selection {
+      width: fit-content;
+      position: relative;
+    }
+    .el-select__placeholder {
+      position: relative;
+      top: auto;
+      transform: none;
+      min-width: 80px;
+      width: fit-content;
+    }
     .el-input {
       .el-input__wrapper{
         &is-focus,
