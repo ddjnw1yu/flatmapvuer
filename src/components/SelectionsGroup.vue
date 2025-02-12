@@ -113,38 +113,6 @@
               </el-checkbox>
             </div>
           </el-row>
-          <el-row
-            v-for="item in selections"
-            :key="item[identifierKey]"
-            :label="item[identifierKey]"
-          >
-            <div class="checkbox-container" 
-              @mouseenter="checkboxMouseEnterEmit(item[identifierKey], true)"
-              @mouseleave="checkboxMouseEnterEmit(item[identifierKey], false)"
-              ref="checkboxContainer"
-              >
-              <el-checkbox
-                class="my-checkbox"
-                :value="item[identifierKey]"
-                @change="visibilityToggle(item[identifierKey], $event)"
-                @click="onCheckboxNativeChange"
-                @mouseenter="displayTooltip(item[labelKey], true, $event)"
-                @mouseleave="displayTooltip('', false, $event)"
-                :checked="!('enabled' in item) || item.enabled === true"
-              >
-                <el-row class="checkbox-row">
-                  <el-col :span="4" v-if="hasLineStyles(item)">
-                    <div class="path-visual" :style="getLineStyles(item)"></div>
-                  </el-col>
-                  <el-col :span="20">
-                    <div class="selection-checkbox-label" :style="getBackgroundStyles(item)">
-                      {{ item[labelKey] }}
-                    </div>
-                  </el-col>
-                </el-row>
-              </el-checkbox>
-            </div>
-          </el-row>
         </div>
       </el-checkbox-group>
     </div>
@@ -342,24 +310,29 @@ export default {
       return { display: 'None' }
     },
     displayTooltip: function (tooltipLabel, visible, e) {
-      const hoverItem = e.target;
-      const containerItem = hoverItem.querySelector('.checkbox-row');
-      const containerItemWidth = containerItem.clientWidth;
-      let lastElement = containerItem.querySelector('.path-visual');
-      let childrenWidth = 0;
-      if (lastElement) {
-        const rect = lastElement.getBoundingClientRect();
-        childrenWidth = rect.width;
+      if (visible) {
+        clearTimeout(this.tooltipDelay)
+        this.tooltipDelay = setTimeout(() => {
+          const hoverItem = e.target;
+          const containerItem = hoverItem.querySelector('.checkbox-row');
+          const containerItemWidth = containerItem.clientWidth;
+          let lastElement = containerItem.querySelector('.path-visual');
+          let childrenWidth = 0;
+          if (lastElement) {
+            const rect = lastElement.getBoundingClientRect();
+            childrenWidth = rect.width;
+          }
+          lastElement = containerItem.querySelector('.selection-checkbox-label');
+          if (lastElement) {
+            const rect = lastElement.getBoundingClientRect();
+            childrenWidth += rect.width;
+          }
+          const longLabel = Math.floor(childrenWidth) > containerItemWidth;
+          this.tooltipVisible = longLabel && visible;
+          this.tooltipLabel = tooltipLabel;
+          this.tooltipPosition = e.pageY - 50;
+        }, 100);
       }
-      lastElement = containerItem.querySelector('.selection-checkbox-label');
-      if (lastElement) {
-        const rect = lastElement.getBoundingClientRect();
-        childrenWidth += rect.width;
-      }
-      const longLabel = Math.floor(childrenWidth) > containerItemWidth;
-      this.tooltipVisible = longLabel && visible;
-      this.tooltipLabel = tooltipLabel;
-      this.tooltipPosition = e.pageY - 50;
     }
   },
   props: {
@@ -421,6 +394,7 @@ export default {
       cascaderItems: [],
       cascaderProps: { multiple: true },
       previousCascader: [],
+      tooltipDelay: undefined
     }
   },
   mounted: function () {
@@ -560,14 +534,13 @@ export default {
   padding: 10px;
 }
 
+.cascader-popper,
 .el-cascader__collapse-tag {
-  font-family: $font-family;
-}
-
-.cascader-popper {
   font-family: $font-family;
   width: 300px;
 
+  .el-cascader-node,
+  .el-cascader-label,
   .el-cascader__suggestion-item {
     color: $app-primary-color;
 
@@ -579,10 +552,6 @@ export default {
 
   .el-cascader-menu__wrap.el-scrollbar__wrap {
     height: 450px;
-  }
-
-  .el-cascader-node {
-    color: $app-primary-color;
   }
 
   .el-checkbox__input {

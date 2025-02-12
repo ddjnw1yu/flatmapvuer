@@ -1160,18 +1160,16 @@ export default {
               uniques[nerve.label] = []
             }
             uniques[nerve.label].push({
-              id: nerve.id,
-              models: nerve.models,
+              models: nerve.models
             })
           }
         })
         for (const [key, value] of Object.entries(uniques)) {
           this.nerves.push({
             value: key,
-            key: value.map(v => v.id),
+            key: [...new Set(value.map(v => v.models))],
             label: key.charAt(0).toUpperCase() + key.slice(1),
             enabled: false,
-            model: [...new Set(value.map(v => v.models))],
           })
         }
       }
@@ -1289,13 +1287,14 @@ export default {
         this.nerves.forEach((nerve) => {
           if (nerve.value === payload.key) {
             nerve.key.forEach((key) => {
-              this.mapImp.enableNeuronPathsByNerve(key, payload.value)
+              // this.mapImp.enableNeuronPathsByNerve(key, payload.value)
             })
             if (payload.value) {
-              nerve.model.forEach((model) => {
-                const gid = this.mapImp.modelFeatureIds(model)
-                this.mapImp.zoomToGeoJSONFeatures(gid, { noZoomIn: true })
+              let gid = []
+              nerve.key.forEach((key) => {
+                gid.push(this.mapImp.modelFeatureIds(key))
               })
+              this.mapImp.zoomToGeoJSONFeatures(gid.flat(1), { noZoomIn: true })
             } else {
               this.mapImp.unselectGeoJSONFeatures()
             }
@@ -1315,7 +1314,7 @@ export default {
           payload.forEach((item) => {
             if (nerve.value === item.key) {
               nerve.key.forEach((key) => {
-                this.mapImp.enableNeuronPathsByNerve(key, item.value)
+                // this.mapImp.enableNeuronPathsByNerve(key, item.value)
               })
             }
           })
