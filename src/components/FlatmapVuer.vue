@@ -1173,7 +1173,7 @@ export default {
     },
     setInitMapState: function () {
       if (this.mapImp) {
-        const map = this.mapImp._map;
+        const map = this.mapImp.map;
         const bounds = this.mapImp.options.bounds;
         const initBounds = [
           [bounds[0], bounds[1]],
@@ -1195,7 +1195,7 @@ export default {
     resetView: function () {
       if (this.mapImp) {
         // fit to window
-        const map = this.mapImp._map;
+        const map = this.mapImp.map;
         const { initBounds } = this.initMapState;
         // reset rotation
         map.resetNorthPitch({
@@ -2259,8 +2259,8 @@ export default {
      moveMap: function (featureIds, options = {}) {
       if (this.mapImp) {
         const { offsetX = 0, offsetY = 0, zoom = 4 } = options;
-        const Map = this.mapImp._map;
-        const bbox = this.mapImp._bounds.toArray();
+        const Map = this.mapImp.map;
+        const bbox = this.mapImp.bounds.toArray();
 
         // Zoom the map to features first
         this.mapImp.zoomToFeatures(featureIds, { noZoomIn: true });
@@ -2514,7 +2514,6 @@ export default {
 
         let promise1 = this.mapManagerRef.loadMap(
           identifier,
-          this.$refs.display,
           this.eventCallback(),
           {
             //fullscreenControl: false,
@@ -2523,6 +2522,7 @@ export default {
             minZoom: this.minZoom,
             tooltips: this.tooltips,
             minimap: minimap,
+            container: this.$refs.display,
             // tooltipDelay: 15, // new feature to delay tooltips showing
           }
         )
@@ -2568,9 +2568,6 @@ export default {
         if (this.mapImp) {
           this.mapImp.resize()
           this.showMinimap(this.displayMinimap)
-          if (this.mapImp._minimap) {
-            this.mapImp._minimap._miniMap.resize()
-          }
         }
       } catch {
         console.error('Map resize error')
@@ -2613,7 +2610,7 @@ export default {
      * after the map is loaded.
      */
     handleMapClick: function () {
-      const _map = this.mapImp._map;
+      const _map = this.mapImp.map;
       if (_map) {
         _map.on('click', (e) => {
           //A little logic to make sure we are keeping track
@@ -3174,7 +3171,7 @@ export default {
     if (this.mapManager) {
       this.mapManagerRef = this.mapManager;
     } else {
-      this.mapManagerRef = markRaw(new flatmap.MapManager(this.flatmapAPI));
+      this.mapManagerRef = markRaw(new flatmap.MapViewer(this.flatmapAPI, { container: undefined }));
       /**
        * The event emitted after a new mapManager is loaded.
        * This mapManager can be used to create new flatmaps.
