@@ -25,3 +25,63 @@
 // Cypress.Commands.overwrite("visit", (originalFn, url, options) => { ... })
 
 import 'cypress-wait-until';
+import CypressComponentWrapper from '../component/CypressComponentWrapper.vue'
+import { createPinia, setActivePinia } from 'pinia';
+const UUIDS = {
+    'Human Female': Cypress.env('HUMAN_FEMALE_UUID'),
+    'Human Male': Cypress.env('HUMAN_MALE_UUID'),
+    'Rat': Cypress.env('RAT_UUID'),
+    'Mouse': Cypress.env('MOUSE_UUID'),
+    'Pig': Cypress.env('PIG_UUID'),
+    'Cat': Cypress.env('CAT_UUID')
+}
+
+Cypress.on('uncaught:exception', (err) => {
+    // returning false here prevents Cypress from
+    // failing the test
+    if (err.message.includes('Source "markers" already exists.'))
+        return false
+    if (err.message.includes("this.facets.at is not a function"))
+        return false
+    if (err.message.includes("Cannot read properties of null (reading '$el')"))
+        return false
+    return true
+})
+
+Cypress.Commands.add('loadMultiFlatmap', (entry, species = undefined) => {
+    const readySpy = cy.spy().as('readySpy')
+    cy.get(entry).then((props) => {
+        console.log('flatmapAPI', props)
+        let propsPayload = props
+        if (species) {
+            propsPayload.initial = species
+        }
+        for (const [key, value] of Object.entries(UUIDS)) {
+            if (key in propsPayload.availableSpecies) {
+                propsPayload.availableSpecies[key].uuid = value
+            }
+        }
+        cy.mount(CypressComponentWrapper, {
+            propsData: {
+                component: 'MultiFlatmapVuer',
+                props: propsPayload,
+                events: {
+                    ready: readySpy
+                }
+            },
+            global: {
+                plugins: setActivePinia(createPinia())
+            }
+        }).then((vm) => {
+            cy.wrap(vm).as('vm')
+            window.vm = vm
+        }).get('@vue').should('exist')
+            // Now that we have the vue wrapper, check that the ready event is fired
+            .then(() => {
+                cy.get('@vue').should(wrapper => {
+                    expect(wrapper.emitted('ready')).to.be.ok
+                    Cypress.multiFlatmapVuerWrapper = wrapper
+                })
+            })
+    })
+})
